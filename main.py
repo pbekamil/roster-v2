@@ -1,10 +1,18 @@
 # =============================================================================
-# main.py  —  Run locally: python main.py
+# main.py  —  Run locally: python main.py [inputs/weekNN.xlsx]
 # =============================================================================
-from data.sample_data import (
-    STAFF, WEEK_CONFIG, BUFFET_SCHEDULE,
-    BAR_SCHEDULE, DAILY_HOURS,
-)
+import sys
+
+if len(sys.argv) > 1:
+    from data.excel_reader import load_from_excel
+    STAFF, WEEK_CONFIG, BUFFET_SCHEDULE, BAR_SCHEDULE, DAILY_HOURS = \
+        load_from_excel(sys.argv[1])
+else:
+    from data.sample_data import (
+        STAFF, WEEK_CONFIG, BUFFET_SCHEDULE,
+        BAR_SCHEDULE, DAILY_HOURS,
+    )
+
 from solver.core import solve
 from reporter.console import print_summary
 from reporter.excel import export_to_excel
