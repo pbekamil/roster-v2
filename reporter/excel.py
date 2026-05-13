@@ -51,8 +51,10 @@ def _week_dates(week_start_str):
     return [d + timedelta(days=i) for i in range(7)]
 
 
-def export_to_excel(results, week_config, buffet_schedule, bar_schedule):
-    os.makedirs("outputs", exist_ok=True)
+def export_to_excel(results, week_config, buffet_schedule, bar_schedule, path=None):
+    if path is None:
+        os.makedirs("outputs", exist_ok=True)
+        path = "outputs/roster_report.xlsx"
     wb    = openpyxl.Workbook()
     dates = _week_dates(week_config["week_start"])
 
@@ -79,7 +81,6 @@ def export_to_excel(results, week_config, buffet_schedule, bar_schedule):
     _venue_roster(ws, "accommodation", "accommodation",
                   results, week_config, dates, active)
 
-    path = "outputs/roster_report.xlsx"
     wb.save(path)
     print(f"  Saved: {path}")
 
