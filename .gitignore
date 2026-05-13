@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Outputs (generated files, may contain real data)
+outputs/
+
+# Temp / anonymisation helper
+_anonymise.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
