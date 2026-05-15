@@ -1,17 +1,10 @@
 # =============================================================================
-# main.py  —  Run locally: python main.py [inputs/weekNN.xlsx]
+# main.py  —  Run locally: python main.py
 # =============================================================================
-import sys
-
-if len(sys.argv) > 1:
-    from data.excel_reader import load_from_excel
-    STAFF, WEEK_CONFIG, BUFFET_SCHEDULE, BAR_SCHEDULE, DAILY_HOURS = \
-        load_from_excel(sys.argv[1])
-else:
-    from data.sample_data import (
-        STAFF, WEEK_CONFIG, BUFFET_SCHEDULE,
-        BAR_SCHEDULE, DAILY_HOURS,
-    )
+from data.sample_data import (
+    STAFF, WEEK_CONFIG, BUFFET_SCHEDULE,
+    BAR_SCHEDULE, DAILY_HOURS,
+)
 
 from solver.core import solve
 from reporter.console import print_summary
@@ -215,13 +208,15 @@ def _diag_bar_coverage(results):
                 continue
             day_shifts = bar_shifts_for_day(vid, BAR_SCHEDULE.get(vid, []), day)
             staging = bar_staging_for_day(vid, day, DAILY_HOURS, day_shifts) or {}
+            num_sessions = len({(s["start_min"],s["end_min"]) for s in day_shifts})
             parts = []
             for role in BAR_ROLES:
                 workers = bar_assignments[vid][day].get(role, [])
-                target = staging.get(role, BAR_MIN_STAGING.get(role, 1))
-                gap = target - len(workers)
+                per_session = staging.get(role, BAR_MIN_STAGING.get(role, 1))
+                total_target = per_session * num_sessions
+                gap = total_target - len(workers)
                 flag = "✓" if gap <= 0 else f"GAP{gap}"
-                parts.append(f"{role}={len(workers)}/{target}({flag})")
+                parts.append(f"{role}={len(workers)}/{total_target}(x{num_sessions}sess)({flag})")
             print(f"    {DAYS[day]:<6}  " + "  ".join(parts))
     print()
 

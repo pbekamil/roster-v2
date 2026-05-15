@@ -645,7 +645,11 @@ def _add_staging_penalties(model, staff, works, penalty_terms,
                     model.Add(under >= target - total)
                     penalty_terms += [eff_over * over, eff_under * under]
 
-    # Bars — hours-budget daily staging
+    # Bars — hours-budget daily staging (applied per session, not per day total).
+    # bar_staging_for_day returns the per-session headcount: budget / sum(session_h).
+    # The penalty must therefore be evaluated per session so that a 2-session venue
+    # with target=5 enforces 5 workers in the morning AND 5 in the evening, not 5
+    # across both sessions combined (which would leave one session unstaffed).
     for vid, day_shifts in all_bar.items():
         for day in range(7):
             shifts = day_shifts[day]
@@ -653,30 +657,37 @@ def _add_staging_penalties(model, staff, works, penalty_terms,
                 continue
             staging = bar_staging_for_day(vid, day, daily_hours, shifts)
             if staging is None:
-                continue   # bar closed (sales = 0)
+                continue   # bar closed (budget = 0)
+
+            # Group shift indices by session time window
+            sessions: dict[tuple, list] = {}
+            for idx, sh in enumerate(shifts):
+                sessions.setdefault((sh["start_min"], sh["end_min"]), []).append(idx)
+
             for role, target in staging.items():
                 if target == 0:
                     continue
-                role_vars = []
-                for s in staff:
-                    sid = s["id"]
-                    if day not in works.get(sid, {}): continue
-                    if vid not in works[sid][day]: continue
-                    for idx, sh in enumerate(shifts):
-                        if sh["role"] == role and idx in works[sid][day][vid]:
-                            role_vars.append(works[sid][day][vid][idx])
-                if not role_vars:
-                    continue
-                # Cap target at eligible count — if fewer workers are trained
-                # than the hours-budget implies, the gap is irrecoverable and
-                # the residual penalty would slow proof of optimality.
-                eff_target = min(target, len(role_vars))
-                total = sum(role_vars)
-                over  = model.NewIntVar(0, len(role_vars), f"ov_{vid}_{day}_{role}")
-                under = model.NewIntVar(0, eff_target,     f"un_{vid}_{day}_{role}")
-                model.Add(over  >= total - eff_target)
-                model.Add(under >= eff_target - total)
-                penalty_terms += [BAR_OVER_PEN * over, BAR_UNDER_PEN * under]
+                for sess_idxs in sessions.values():
+                    role_vars = []
+                    for s in staff:
+                        sid = s["id"]
+                        if day not in works.get(sid, {}): continue
+                        if vid not in works[sid][day]: continue
+                        for idx in sess_idxs:
+                            if shifts[idx]["role"] == role and idx in works[sid][day][vid]:
+                                role_vars.append(works[sid][day][vid][idx])
+                    if not role_vars:
+                        continue
+                    # Cap target at eligible count — irrecoverable gap if fewer
+                    # workers are trained than the hours-budget implies.
+                    eff_target = min(target, len(role_vars))
+                    total = sum(role_vars)
+                    s0 = sess_idxs[0]
+                    over  = model.NewIntVar(0, len(role_vars), f"ov_{vid}_{day}_{s0}_{role}")
+                    under = model.NewIntVar(0, eff_target,     f"un_{vid}_{day}_{s0}_{role}")
+                    model.Add(over  >= total - eff_target)
+                    model.Add(under >= eff_target - total)
+                    penalty_terms += [BAR_OVER_PEN * over, BAR_UNDER_PEN * under]
 
     # Accommodation — cap TM+ at (target - normal_team_count)
     # so surplus TM+ are freed to work their home venues
@@ -1194,21 +1205,24 @@ def _build_coverage(solver, feasible, staff, works,
                         day_cov["services"][svc][role]["eligible"] = eligible
 
             elif vid in all_bar:
-                staging = bar_staging_for_day(
-                    vid, day, daily_hours, all_bar[vid][day])
+                bar_shifts_day = all_bar[vid][day]
+                staging = bar_staging_for_day(vid, day, daily_hours, bar_shifts_day)
                 if staging:
+                    # Number of unique sessions — target is per-session headcount,
+                    # actual is total across all sessions, so scale target to match.
+                    num_sessions = len({(sh["start_min"], sh["end_min"])
+                                        for sh in bar_shifts_day})
                     for role, tgt in staging.items():
                         day_cov["services"].setdefault("bar", {})
                         day_cov["services"]["bar"].setdefault(
                             role, {"actual": 0, "target": 0})
-                        day_cov["services"]["bar"][role]["target"] = tgt
+                        day_cov["services"]["bar"][role]["target"] = tgt * num_sessions
                         eligible = sum(
                             1 for s in staff
                             if day in works.get(s["id"], {})
                             and vid in works[s["id"]][day]
                             and any(sh["role"] == role
-                                    for idx, sh in enumerate(
-                                        all_bar[vid][day])
+                                    for idx, sh in enumerate(bar_shifts_day)
                                     if idx in works[s["id"]][day].get(vid, {}))
                         )
                         day_cov["services"]["bar"][role]["eligible"] = eligible
